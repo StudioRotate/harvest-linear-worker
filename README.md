@@ -24,7 +24,7 @@ This Cloudflare Worker automatically syncs time entries from Harvest with Linear
 
 1. Clone the Repository
    ```
-   git clone ...
+   git clone https://github.com/StudioRotate/harvest-linear-worker
    cd harvest-linear-worker
    ```
 2. Install Dependencies
