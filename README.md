@@ -81,7 +81,7 @@ wrangler publish
 
 - **Cron Trigger:** The Worker is triggered every minute by a Cloudflare Cron Trigger.
 - **Fetch Time Entries:** It fetches recent time entries from Harvest starting from the last processed date stored in KV.
-  KV Check: The Worker checks Cloudflare KV for the last processed entry date to ensure only new or updated entries are handled.
+- **KV Check:** The Worker checks Cloudflare KV for the last processed entry date to ensure only new or updated entries are handled.
 - **Estimate Comparison:** The Worker compares the tracked hours with the Fibonacci estimate on the corresponding Linear issue.
   Comment and Label: The Worker posts a comment to the Linear issue, adds a label (Over, Under, On Track), and updates the KV store with the latest processed date.
 
