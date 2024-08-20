@@ -1,0 +1,24 @@
+name = "harvest-linear-worker"
+main = "src/index.ts"
+account_id = "your-cloudflare-account-id"
+compatibility_date = "2024-08-15"
+compatibility_flags = ["nodejs_compat"]
+
+# KV Namespace Configuration
+[[kv_namespaces]]
+binding = "HARVEST_LAST_ENTRY_ID"
+id = "your-kv-namespace-id"
+
+# Schedule Configuration
+[[triggers]]
+crons = ["* * * * *"]  # Every minute cron schedule
+
+# Environment Variables
+[env]
+HARVEST_API_KEY = "your-harvest-api-key"
+HARVEST_ACCOUNT_ID = "your-harvest-account-id"
+LINEAR_API_KEY = "your-linear-api-key"
+
+# Build and upload settings
+[build]
+command = "npm run build"
