@@ -9,10 +9,6 @@ compatibility_flags = ["nodejs_compat"]
 binding = "harvest_last_entry_id"
 id = "your-kv-namespace-id"
 
-[[kv_namespaces]]
-binding = "linear_issue_tracked_time"
-id = "your-kv-namespace-id"
-
 # Schedule Configuration
 [triggers]
 crons = ["* * * * *"]  # Every minute cron schedule

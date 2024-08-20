@@ -3,7 +3,6 @@
 
 interface Env {
   harvest_last_entry_id: KVNamespace;
-  linear_issue_tracked_time: KVNamespace;
   HARVEST_API_KEY: string;
   LINEAR_API_KEY: string;
   HARVEST_ACCOUNT_ID: string;

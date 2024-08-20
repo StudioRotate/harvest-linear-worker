@@ -45,14 +45,46 @@ interface HarvestApiResponse {
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 const KV_ENTRY_NAMESPACE = "harvest_last_entry_id";
-const KV_ISSUE_NAMESPACE = "linear_issue_tracked_time";
 const WORKSPACE_LABEL_IDS = {
   OVER: "9a35399f-0bfe-49a0-b10a-0176600422d4",
   UNDER: "e087901d-c0b4-4aa8-964c-2b3d99e3541f",
   ON_TRACK: "8a15c5b7-9853-4286-b346-d86e1b3d448d",
 };
 
-async function fetchTimeEntriesFromHarvest(
+const removeLabelsFromSet = (
+  labelIds: Set<string>,
+  labelsToRemove: string[]
+) => {
+  labelsToRemove.forEach((label) => {
+    labelIds.delete(label);
+  });
+};
+
+async function getAllTimeEntriesByIssueId(
+  issueId: string,
+  env: Env
+): Promise<HarvestTimeEntry[]> {
+  const response = await fetch(
+    `https://api.harvestapp.com/v2/time_entries?external_reference_id=${issueId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${env.HARVEST_API_KEY}`,
+        "Harvest-Account-Id": env.HARVEST_ACCOUNT_ID,
+        "User-Agent": "Harvest API Example",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch time entries from Harvest");
+  }
+
+  const data: HarvestApiResponse = await response.json();
+
+  return data?.time_entries as HarvestTimeEntry[];
+}
+
+async function fetchTimeEntriesSinceTimestamp(
   lastProcessedTimestamp: string,
   env: Env
 ): Promise<HarvestTimeEntry[]> {
@@ -74,23 +106,6 @@ async function fetchTimeEntriesFromHarvest(
   const data: HarvestApiResponse = await response.json();
 
   return data?.time_entries as HarvestTimeEntry[];
-}
-
-async function getIssueTrackedTime(issueId: string, env: Env): Promise<number> {
-  const trackedTime = await env[KV_ISSUE_NAMESPACE].get(issueId);
-  if (trackedTime) {
-    return parseFloat(trackedTime);
-  }
-
-  return 0;
-}
-
-async function setIssueTrackedTime(
-  timeValue: number,
-  issueId: string,
-  env: Env
-): Promise<void> {
-  await env[KV_ISSUE_NAMESPACE].put(issueId, timeValue);
 }
 
 async function getLastProcessedDate(env: Env): Promise<string> {
@@ -122,10 +137,10 @@ async function getLinearIssue(
 			issue(id: "${issueId}") {
 				estimate
 				labels {
-                    nodes {
-                        id
-                    }
-                }
+          nodes {
+            id
+          }
+        }
 			}
 		}
 	`;
@@ -196,7 +211,7 @@ async function modifyLinearIssue(
 
 async function processTimeEntries(env: Env): Promise<Response> {
   const lastProcessedTimestamp = await getLastProcessedDate(env);
-  const timeEntries = await fetchTimeEntriesFromHarvest(
+  const timeEntries = await fetchTimeEntriesSinceTimestamp(
     lastProcessedTimestamp,
     env
   );
@@ -223,29 +238,47 @@ async function processTimeEntries(env: Env): Promise<Response> {
     let labelIds = new Set([...existingLabels]);
     let comparisonResult = "";
 
-    const issueTrackedTime = await getIssueTrackedTime(linearIssueId, env);
-    const trackedTime = parseFloat((issueTrackedTime + entry.hours).toFixed(2));
+    const allIssueEntries = await getAllTimeEntriesByIssueId(
+      linearIssueId,
+      env
+    );
+    const allIssueTrackedTime = parseFloat(
+      allIssueEntries
+        .reduce((total, entry) => total + entry.hours, 0)
+        .toFixed(2)
+    );
 
-    if (trackedTime > estimate) {
+    if (allIssueTrackedTime > estimate) {
+      removeLabelsFromSet(labelIds, [
+        WORKSPACE_LABEL_IDS["UNDER"],
+        WORKSPACE_LABEL_IDS["ON_TRACK"],
+      ]);
       labelIds.add(WORKSPACE_LABEL_IDS["OVER"]);
-      comparisonResult = `🔴 **Over**: ${trackedTime} hours tracked, which is ${(
-        Math.round((trackedTime - estimate) * 100) / 100
+      comparisonResult = `🔴 **Over**: ${allIssueTrackedTime} hours tracked, which is ${(
+        Math.round((allIssueTrackedTime - estimate) * 100) / 100
       ).toFixed(2)} hours over the estimate of ${estimate} hours.`;
-    } else if (trackedTime < estimate) {
+    } else if (allIssueTrackedTime < estimate) {
+      removeLabelsFromSet(labelIds, [
+        WORKSPACE_LABEL_IDS["OVER"],
+        WORKSPACE_LABEL_IDS["ON_TRACK"],
+      ]);
       labelIds.add(WORKSPACE_LABEL_IDS["UNDER"]);
-      comparisonResult = `🟢 **Under**: ${trackedTime} hours tracked, which is ${(
-        Math.round((estimate - trackedTime) * 100) / 100
+      comparisonResult = `🟢 **Under**: ${allIssueTrackedTime} hours tracked, which is ${(
+        Math.round((estimate - allIssueTrackedTime) * 100) / 100
       ).toFixed(2)} hours under the estimate of ${estimate} hours.`;
     } else {
+      removeLabelsFromSet(labelIds, [
+        WORKSPACE_LABEL_IDS["UNDER"],
+        WORKSPACE_LABEL_IDS["OVER"],
+      ]);
       labelIds.add(WORKSPACE_LABEL_IDS["ON_TRACK"]);
-      comparisonResult = `🟡 **On Track**: ${trackedTime} hours tracked, which matches the estimate of ${estimate} hours exactly.`;
+      comparisonResult = `🟡 **On Track**: ${allIssueTrackedTime} hours tracked, which matches the estimate of ${estimate} hours exactly.`;
     }
 
     const comment =
       `🕒 **Time Tracked** by ${entry.user.name}: ${comparisonResult} 📝 **Notes**: ${entry.notes}`.trim();
 
     await modifyLinearIssue(linearIssueId, comment, [...labelIds], env);
-    await setIssueTrackedTime(trackedTime, linearIssueId, env);
   }
 
   const latestEntryTimestamp = timeEntries
