@@ -44,7 +44,8 @@ interface HarvestApiResponse {
 }
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
-const KV_NAMESPACE = "harvest_last_entry_id";
+const KV_ENTRY_NAMESPACE = "harvest_last_entry_id";
+const KV_ISSUE_NAMESPACE = "linear_issue_tracked_time";
 const WORKSPACE_LABEL_IDS = {
   OVER: "9a35399f-0bfe-49a0-b10a-0176600422d4",
   UNDER: "e087901d-c0b4-4aa8-964c-2b3d99e3541f",
@@ -71,11 +72,31 @@ async function fetchTimeEntriesFromHarvest(
   }
 
   const data: HarvestApiResponse = await response.json();
+
   return data?.time_entries as HarvestTimeEntry[];
 }
 
+async function getIssueTrackedTime(issueId: string, env: Env): Promise<number> {
+  const trackedTime = await env[KV_ISSUE_NAMESPACE].get(issueId);
+  if (trackedTime) {
+    return parseFloat(trackedTime);
+  }
+
+  return 0;
+}
+
+async function setIssueTrackedTime(
+  timeValue: number,
+  issueId: string,
+  env: Env
+): Promise<void> {
+  await env[KV_ISSUE_NAMESPACE].put(issueId, timeValue);
+}
+
 async function getLastProcessedDate(env: Env): Promise<string> {
-  const lastTimestamp = await env[KV_NAMESPACE].get("lastProcessedTimestamp");
+  const lastTimestamp = await env[KV_ENTRY_NAMESPACE].get(
+    "lastProcessedTimestamp"
+  );
   if (lastTimestamp) {
     return lastTimestamp;
   }
@@ -89,7 +110,7 @@ async function setLastProcessedDate(
   latestTimestamp: string,
   env: Env
 ): Promise<void> {
-  await env[KV_NAMESPACE].put("lastProcessedTimestamp", latestTimestamp);
+  await env[KV_ENTRY_NAMESPACE].put("lastProcessedTimestamp", latestTimestamp);
 }
 
 async function getLinearIssue(
@@ -143,7 +164,7 @@ async function modifyLinearIssue(
 			commentCreate(input: {issueId: "${issueId}", body: "${comment}"}) {
 				success
 			}
-			issueUpdate(id: "${issueId}", input: { labelIds: ${JSON.stringify(labelIds)}) {
+			issueUpdate(id: "${issueId}", input: {labelIds: ${JSON.stringify(labelIds)} }) {
 				success
 			}
 		}
@@ -202,29 +223,29 @@ async function processTimeEntries(env: Env): Promise<Response> {
     let labelIds = new Set([...existingLabels]);
     let comparisonResult = "";
 
-    if (entry.hours > estimate) {
+    const issueTrackedTime = await getIssueTrackedTime(linearIssueId, env);
+    const trackedTime = parseFloat((issueTrackedTime + entry.hours).toFixed(2));
+
+    if (trackedTime > estimate) {
       labelIds.add(WORKSPACE_LABEL_IDS["OVER"]);
-      comparisonResult = `🔴 **Over**: ${
-        entry.hours
-      } hours tracked, which is ${(
-        Math.round((entry.hours - estimate) * 100) / 100
+      comparisonResult = `🔴 **Over**: ${trackedTime} hours tracked, which is ${(
+        Math.round((trackedTime - estimate) * 100) / 100
       ).toFixed(2)} hours over the estimate of ${estimate} hours.`;
-    } else if (entry.hours < estimate) {
+    } else if (trackedTime < estimate) {
       labelIds.add(WORKSPACE_LABEL_IDS["UNDER"]);
-      comparisonResult = `🟢 **Under**: ${
-        entry.hours
-      } hours tracked, which is ${(
-        Math.round((estimate - entry.hours) * 100) / 100
+      comparisonResult = `🟢 **Under**: ${trackedTime} hours tracked, which is ${(
+        Math.round((estimate - trackedTime) * 100) / 100
       ).toFixed(2)} hours under the estimate of ${estimate} hours.`;
     } else {
       labelIds.add(WORKSPACE_LABEL_IDS["ON_TRACK"]);
-      comparisonResult = `🟡 **On Track**: ${entry.hours} hours tracked, which matches the estimate of ${estimate} hours exactly.`;
+      comparisonResult = `🟡 **On Track**: ${trackedTime} hours tracked, which matches the estimate of ${estimate} hours exactly.`;
     }
 
     const comment =
       `🕒 **Time Tracked** by ${entry.user.name}: ${comparisonResult} 📝 **Notes**: ${entry.notes}`.trim();
 
     await modifyLinearIssue(linearIssueId, comment, [...labelIds], env);
+    await setIssueTrackedTime(trackedTime, linearIssueId, env);
   }
 
   const latestEntryTimestamp = timeEntries

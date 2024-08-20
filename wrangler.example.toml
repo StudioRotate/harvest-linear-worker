@@ -6,11 +6,15 @@ compatibility_flags = ["nodejs_compat"]
 
 # KV Namespace Configuration
 [[kv_namespaces]]
-binding = "HARVEST_LAST_ENTRY_ID"
+binding = "harvest_last_entry_id"
+id = "your-kv-namespace-id"
+
+[[kv_namespaces]]
+binding = "linear_issue_tracked_time"
 id = "your-kv-namespace-id"
 
 # Schedule Configuration
-[[triggers]]
+[triggers]
 crons = ["* * * * *"]  # Every minute cron schedule
 
 # Environment Variables
