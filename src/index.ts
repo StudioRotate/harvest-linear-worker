@@ -227,7 +227,7 @@ async function processTimeEntries(env: Env): Promise<Response> {
   for (const entry of newEntries) {
     const linearIssueId = entry.external_reference?.id;
 
-    if (!linearIssueId || !linearIssueId.includes("WIL")) continue;
+    if (!linearIssueId) continue;
 
     const linearIssue = await getLinearIssue(linearIssueId, env);
     const estimate = linearIssue?.data?.issue.estimate || null;
